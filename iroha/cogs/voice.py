@@ -12,6 +12,8 @@ class VoiceCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._autojoin_locks: dict[int, asyncio.Lock] = {}
+        self._autojoin_fail_count: dict[int, int] = {}
+        self._autojoin_next_retry: dict[int, float] = {}
 
     async def _get_author_voice_channel(self, interaction: discord.Interaction):
         if interaction.user.voice is None or interaction.user.voice.channel is None:
@@ -33,7 +35,7 @@ class VoiceCog(commands.Cog):
             if voice_client and voice_client.is_connected():
                 await voice_client.move_to(voice_channel)
             else:
-                await voice_channel.connect(timeout=20, self_deaf=True)
+                await voice_channel.connect(timeout=12, reconnect=False, self_deaf=True)
         except TimeoutError:
             await interaction.response.send_message(
                 "Kết nối voice bị timeout, thử lại sau một chút nha!", ephemeral=True
@@ -96,10 +98,17 @@ class VoiceCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         voice_client = interaction.guild.voice_client
-        if voice_client and voice_client.is_connected():
-            await voice_client.move_to(voice_channel)
-        else:
-            voice_client = await voice_channel.connect()
+        try:
+            if voice_client and voice_client.is_connected():
+                await voice_client.move_to(voice_channel)
+            else:
+                voice_client = await voice_channel.connect(timeout=12, reconnect=False, self_deaf=True)
+        except TimeoutError:
+            await interaction.followup.send("Kết nối voice bị timeout, bạn thử lại sau ít giây nha.", ephemeral=True)
+            return
+        except Exception as exc:
+            await interaction.followup.send(f"Mình vào voice chưa được: {exc}", ephemeral=True)
+            return
 
         if voice_client.is_playing():
             voice_client.stop()
@@ -141,16 +150,29 @@ class VoiceCog(commands.Cog):
             voice_client = member.guild.voice_client
             if voice_client is None or not voice_client.is_connected():
                 guild_id = member.guild.id
+                now = asyncio.get_running_loop().time()
+                next_retry = self._autojoin_next_retry.get(guild_id, 0.0)
+                if now < next_retry:
+                    return
                 lock = self._autojoin_locks.setdefault(guild_id, asyncio.Lock())
                 if lock.locked():
                     return
                 async with lock:
                     try:
                         await asyncio.sleep(1)
-                        await after.channel.connect(timeout=15, reconnect=False, self_deaf=True)
+                        await after.channel.connect(timeout=12, reconnect=False, self_deaf=True)
+                        self._autojoin_fail_count[guild_id] = 0
+                        self._autojoin_next_retry[guild_id] = 0.0
                         await self.bot.guild_log(guild_id, f"Mình tự động join {after.channel.mention} rồi nha!")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        fail_count = self._autojoin_fail_count.get(guild_id, 0) + 1
+                        self._autojoin_fail_count[guild_id] = fail_count
+                        delay = min(300, 15 * (2 ** (fail_count - 1)))
+                        self._autojoin_next_retry[guild_id] = asyncio.get_running_loop().time() + delay
+                        await self.bot.guild_log(
+                            guild_id,
+                            f"Autojoin thất bại ({type(exc).__name__}), sẽ thử lại sau {delay}s.",
+                        )
 
 
 async def setup(bot):
