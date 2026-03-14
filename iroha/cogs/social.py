@@ -26,10 +26,10 @@ class PlayGameView(discord.ui.View):
     @discord.ui.button(label="Tham gia", style=discord.ButtonStyle.green)
     async def join(self, interaction: discord.Interaction, _: discord.ui.Button):
         if interaction.user.id in self.players:
-            await interaction.response.send_message("Bạn đã ở trong room.", ephemeral=True)
+            await interaction.response.send_message("Bạn đã có trong room rồi nha!", ephemeral=True)
             return
         if len(self.players) >= self.max_players:
-            await interaction.response.send_message("Room đã đủ người.", ephemeral=True)
+            await interaction.response.send_message("Room đầy rồi, tiếc quá!", ephemeral=True)
             return
         self.players.append(interaction.user.id)
         await interaction.response.edit_message(embed=self.render_embed(interaction.guild), view=self)
@@ -77,7 +77,7 @@ class SocialCog(commands.Cog):
         max_players: app_commands.Range[int, 2, 20] = 3,
     ):
         if interaction.guild is None:
-            await interaction.response.send_message("Chỉ dùng trong server.", ephemeral=True)
+            await interaction.response.send_message("Lệnh này chỉ dùng được trong server thôi nha.", ephemeral=True)
             return
         view = PlayGameView(owner_id=interaction.user.id, game_name=game, max_players=max_players)
         embed = view.render_embed(interaction.guild)
@@ -99,7 +99,7 @@ class SocialCog(commands.Cog):
     @app_commands.command(name="hangout", description="Tạo event offline")
     async def hangout(self, interaction: discord.Interaction, dip: str, dia_diem: str, thoi_gian: str):
         if interaction.guild is None:
-            await interaction.response.send_message("Chỉ dùng trong server.", ephemeral=True)
+            await interaction.response.send_message("Lệnh này chỉ dùng được trong server thôi nha.", ephemeral=True)
             return
         embed = discord.Embed(title="Sự kiện hangout", color=discord.Color.orange())
         embed.add_field(name="Dịp", value=dip, inline=False)

@@ -22,7 +22,7 @@ class BackupCog(commands.Cog):
                 watch_channels.append(channel.id)
 
         await self.bot.patch_guild_settings(interaction.guild.id, patcher)
-        await interaction.response.send_message(f"Đã thêm {channel.mention} vào danh sách backup.")
+        await interaction.response.send_message(f"Thêm {channel.mention} vào danh sách backup rồi!")
 
     @app_commands.command(name="backupwatch_remove", description="Gỡ channel khỏi danh sách auto backup")
     @app_commands.default_permissions(manage_guild=True)
@@ -36,7 +36,7 @@ class BackupCog(commands.Cog):
             guild["backup_watch_channels"] = [item for item in watch_channels if item != channel.id]
 
         await self.bot.patch_guild_settings(interaction.guild.id, patcher)
-        await interaction.response.send_message(f"Đã gỡ {channel.mention} khỏi danh sách backup.")
+        await interaction.response.send_message(f"Gỡ {channel.mention} khỏi danh sách backup rồi nhé.")
 
     @app_commands.command(name="backupwatch_list", description="Xem các channel đang được theo dõi backup")
     @app_commands.default_permissions(manage_guild=True)
@@ -47,7 +47,7 @@ class BackupCog(commands.Cog):
         settings = await self.bot.get_guild_settings(interaction.guild.id)
         channel_ids = settings.get("backup_watch_channels", [])
         if not channel_ids:
-            await interaction.response.send_message("Chưa có channel nào được theo dõi backup.", ephemeral=True)
+            await interaction.response.send_message("Chưa có channel nào được theo dõi backup nha.", ephemeral=True)
             return
         lines = []
         for channel_id in channel_ids:
@@ -69,14 +69,15 @@ class BackupCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         result = await self.bot.backup_service.manual_backup_by_date(channel, parsed)
-        message = (
-            f"Uploaded: {result['uploaded']}\n"
-            f"Duplicate: {result['skip_duplicate']}\n"
-            f"Too large: {result['skip_too_large']}\n"
-            f"Not media: {result['skip_not_media']}\n"
-            f"Failed: {result['failed']}"
+        summary = (
+            f"Backup ngày {date} xong rồi!\n"
+            f"Đã upload: {result['uploaded']} file\n"
+            f"Bỏ qua trùng lặp: {result['skip_duplicate']}\n"
+            f"Bỏ qua quá lớn: {result['skip_too_large']}\n"
+            f"Không phải media: {result['skip_not_media']}\n"
+            f"Lỗi: {result['failed']}"
         )
-        await interaction.followup.send(message, ephemeral=True)
+        await interaction.followup.send(summary, ephemeral=True)
 
     @app_commands.command(name="backup_status", description="Xem trạng thái backup Dropbox")
     @app_commands.default_permissions(manage_guild=True)
@@ -91,6 +92,33 @@ class BackupCog(commands.Cog):
         embed.add_field(name="Last error", value=stats.get("last_error", "Không có") or "Không có", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @app_commands.command(name="backup_all", description="Backup tất cả ảnh/video hiện có trong channel")
+    @app_commands.default_permissions(manage_guild=True)
+    async def backup_all(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        if interaction.guild is None:
+            await interaction.response.send_message("Lệnh này chỉ dùng được trong server thôi nha.", ephemeral=True)
+            return
+        from iroha.config import BACKUP_ALLOWED_GUILD_IDS
+        if interaction.guild.id not in BACKUP_ALLOWED_GUILD_IDS:
+            await interaction.response.send_message("Tính năng backup chỉ hoạt động ở các server được cho phép thôi nha.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(
+            f"Bắt đầu backup toàn bộ media trong {channel.mention} rồi, mình sẽ báo khi xong nha!",
+            ephemeral=True,
+        )
+        result = await self.bot.backup_service.backup_all_channel(channel)
+        summary = (
+            f"Backup {channel.mention} xong rồi!\n"
+            f"Đã upload: {result['uploaded_images']} ảnh, {result['uploaded_videos']} video\n"
+            f"Bỏ qua trùng lặp: {result['skip_duplicate']}\n"
+            f"Bỏ qua quá lớn: {result['skip_too_large']}\n"
+            f"Không phải media: {result['skip_not_media']}\n"
+            f"Lỗi: {result['failed']}"
+        )
+        await self.bot.guild_log(interaction.guild.id, summary)
+        await interaction.followup.send(summary, ephemeral=True)
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.guild is None or message.author.bot or not message.attachments:
@@ -103,13 +131,14 @@ class BackupCog(commands.Cog):
             ok, status = await self.bot.backup_service.backup_attachment(
                 guild_id=message.guild.id,
                 channel_id=message.channel.id,
+                channel_name=message.channel.name,
                 message_id=message.id,
                 attachment=attachment,
             )
             if not ok:
                 await self.bot.backup_service.note_skip(status)
             else:
-                await self.bot.guild_log(message.guild.id, f"Đã backup media mới từ {message.channel.mention}")
+                await self.bot.guild_log(message.guild.id, f"Mình vừa backup 1 file từ {message.channel.mention}!")
 
 
 async def setup(bot):

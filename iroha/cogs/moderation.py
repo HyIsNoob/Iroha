@@ -21,7 +21,7 @@ class ModerationCog(commands.Cog):
         reply_text: str = "Bạn đã bị cấm vận",
     ):
         if interaction.guild is None:
-            await interaction.response.send_message("Chỉ dùng trong server.", ephemeral=True)
+            await interaction.response.send_message("Lệnh này chỉ dùng được trong server thôi nha.", ephemeral=True)
             return
 
         def patcher(guild: dict):
@@ -35,15 +35,15 @@ class ModerationCog(commands.Cog):
                     muted_rules.pop(str(channel.id), None)
 
         await self.bot.patch_guild_settings(interaction.guild.id, patcher)
-        action = "đã bật" if enabled else "đã tắt"
-        await interaction.response.send_message(f"{action} muted cho {user.mention} ở {channel.mention}.")
+        action = "bật" if enabled else "tắt"
+        await interaction.response.send_message(f"Mình đã {action} muted cho {user.mention} ở {channel.mention} rồi nhé.")
         await self.bot.guild_log(interaction.guild.id, f"{interaction.user.mention} {action} muted cho {user.mention} ở {channel.mention}")
 
     @app_commands.command(name="clearbot", description="Xóa 50 tin nhắn gần nhất của Iroha trong channel hiện tại")
     @app_commands.default_permissions(manage_messages=True)
     async def clearbot(self, interaction: discord.Interaction):
         if interaction.guild is None or not isinstance(interaction.channel, discord.TextChannel):
-            await interaction.response.send_message("Chỉ dùng trong text channel của server.", ephemeral=True)
+            await interaction.response.send_message("Lệnh này chỉ dùng được trong text channel của server thôi nha.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -55,7 +55,7 @@ class ModerationCog(commands.Cog):
                 break
 
         if not removed:
-            await interaction.followup.send("Không có tin nhắn nào của Iroha để xóa.", ephemeral=True)
+            await interaction.followup.send("Mình tìm không thấy tin nhắn nào của mình ở đây cả.", ephemeral=True)
             return
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=14)
@@ -83,7 +83,7 @@ class ModerationCog(commands.Cog):
             except discord.Forbidden:
                 pass
 
-        await interaction.followup.send(f"Đã xóa {deleted} tin nhắn của Iroha.", ephemeral=True)
+        await interaction.followup.send(f"Mình dọn xong rồi, đã xóa {deleted} tin nhắn nha!", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

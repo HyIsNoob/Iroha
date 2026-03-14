@@ -1,0 +1,20 @@
+{
+  "guilds": {
+    "1414266396791275683": {
+      "log_channel_id": 1482361826204192879,
+      "autojoin_enabled": false,
+      "voiceinout_enabled": false,
+      "backup_watch_channels": [
+        1482361826204192879
+      ],
+      "muted_rules": {}
+    },
+    "1172096674328485948": {
+      "log_channel_id": 1482366683707605013,
+      "autojoin_enabled": false,
+      "voiceinout_enabled": false,
+      "backup_watch_channels": [],
+      "muted_rules": {}
+    }
+  }
+}

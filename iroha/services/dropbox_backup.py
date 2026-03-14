@@ -32,14 +32,16 @@ class DropboxBackupService:
         return self._client
 
     @staticmethod
-    def _is_media(attachment) -> bool:
+    def _media_type(attachment) -> str:
         content_type = attachment.content_type or ""
-        if content_type.startswith("image/") or content_type.startswith("video/"):
-            return True
         lower_name = attachment.filename.lower()
         image_ext = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
         video_ext = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v")
-        return lower_name.endswith(image_ext + video_ext)
+        if content_type.startswith("image/") or lower_name.endswith(image_ext):
+            return "image"
+        if content_type.startswith("video/") or lower_name.endswith(video_ext):
+            return "video"
+        return ""
 
     async def _upload_bytes(self, data: bytes, dropbox_path: str):
         client = self._get_client()
@@ -56,8 +58,11 @@ class DropboxBackupService:
         except Exception as exc:
             return False, str(exc)
 
-    async def backup_attachment(self, guild_id: int, channel_id: int, message_id: int, attachment) -> tuple[bool, str]:
-        if not self._is_media(attachment):
+    async def backup_attachment(self, guild_id: int, channel_id: int, channel_name: str, message_id: int, attachment) -> tuple[bool, str]:
+        if guild_id not in config.BACKUP_ALLOWED_GUILD_IDS:
+            return False, "skip_not_allowed_guild"
+        media_type = self._media_type(attachment)
+        if not media_type:
             return False, "skip_not_media"
         if attachment.size > config.BACKUP_MAX_FILE_MB * 1024 * 1024:
             return False, "skip_too_large"
@@ -74,9 +79,10 @@ class DropboxBackupService:
                 payload = await response.read()
 
         sha = hashlib.sha256(payload).hexdigest()
-        date_part = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        safe_channel = channel_name.replace("/", "_").replace(" ", "-")
         safe_name = attachment.filename.replace("/", "_")
-        dropbox_path = f"{config.DROPBOX_BACKUP_ROOT}/{guild_id}/{channel_id}/{date_part}/{message_id}_{attachment.id}_{safe_name}"
+        folder = "images" if media_type == "image" else "videos"
+        dropbox_path = f"{config.DROPBOX_BACKUP_ROOT}/{safe_channel}/{folder}/{safe_name}"
 
         ok, err = await self._upload_bytes(payload, dropbox_path)
         if not ok:
@@ -136,6 +142,7 @@ class DropboxBackupService:
                 ok, status = await self.backup_attachment(
                     guild_id=message.guild.id,
                     channel_id=message.channel.id,
+                    channel_name=message.channel.name,
                     message_id=message.id,
                     attachment=attachment,
                 )
@@ -150,4 +157,39 @@ class DropboxBackupService:
                         stats = await self.stats_store.read()
                         stats["last_error"] = status
                         await self.stats_store.write(stats)
+        return result
+
+    async def backup_all_channel(self, channel, rate_delay: float = 0.5) -> dict:
+        result = {
+            "uploaded_images": 0,
+            "uploaded_videos": 0,
+            "skip_duplicate": 0,
+            "skip_too_large": 0,
+            "skip_not_media": 0,
+            "failed": 0,
+        }
+        async for message in channel.history(limit=None, oldest_first=True):
+            if not message.attachments:
+                continue
+            for attachment in message.attachments:
+                ok, status = await self.backup_attachment(
+                    guild_id=message.guild.id,
+                    channel_id=message.channel.id,
+                    channel_name=message.channel.name,
+                    message_id=message.id,
+                    attachment=attachment,
+                )
+                if ok:
+                    mt = self._media_type(attachment)
+                    if mt == "image":
+                        result["uploaded_images"] += 1
+                    else:
+                        result["uploaded_videos"] += 1
+                else:
+                    if status in result:
+                        result[status] += 1
+                    else:
+                        result["failed"] += 1
+                    await self.note_skip(status)
+                await asyncio.sleep(rate_delay)
         return result
