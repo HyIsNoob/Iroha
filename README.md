@@ -118,20 +118,3 @@ Invoke-RestMethod http://localhost:10000/health
 Đăng ký [UptimeRobot](https://uptimerobot.com) → monitor URL `https://<app>.onrender.com/health` mỗi **5 phút** (HTTP).
 
 ---
-
-## Quyền bot Discord cần thiết
-
-Khi thêm bot vào server, cấp các quyền sau:
-
-- `Send Messages`
-- `Embed Links`
-- `Read Message History`
-- `Manage Messages`
-- `Connect`
-- `Speak`
-- `Use Voice Activity`
-
-**Privileged Intents** (bật trong [Discord Developer Portal](https://discord.com/developers/applications)):
-- **Server Members Intent**
-- **Presence Intent**
-- **Message Content Intent**
