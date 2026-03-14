@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: iroha-bot
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DROPBOX_APP_KEY
+        sync: false
+      - key: DROPBOX_APP_SECRET
+        sync: false
+      - key: DROPBOX_REFRESH_TOKEN
+        sync: false
+      - key: DROPBOX_BACKUP_ROOT
+        value: /iroha-backup
+      - key: BACKUP_MAX_FILE_MB
+        value: "50"
+      - key: PORT
+        value: "10000"
+      - key: LOG_LEVEL
+        value: INFO
