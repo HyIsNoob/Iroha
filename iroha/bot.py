@@ -37,6 +37,25 @@ class IrohaBot(commands.Bot):
         self.backup_service = DropboxBackupService(self.backup_manifest_store, self.backup_stats_store)
         self._startup_synced = False
 
+    async def sync_allowed_guild_commands(self, remove_global: bool = True) -> int:
+        if remove_global:
+            global_commands = list(self.tree.get_commands(guild=None))
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
+            for command in global_commands:
+                self.tree.add_command(command)
+
+        synced_guilds = 0
+        for guild_id in config.BACKUP_ALLOWED_GUILD_IDS:
+            guild_obj = discord.Object(id=guild_id)
+            self.tree.clear_commands(guild=guild_obj)
+            self.tree.copy_global_to(guild=guild_obj)
+            synced = await self.tree.sync(guild=guild_obj)
+            synced_guilds += 1
+            self.logger.info("Guild sync %s: %s commands", guild_id, len(synced))
+
+        return synced_guilds
+
     async def setup_hook(self):
         await self.settings_store.read()
         await self.playgame_store.read()
@@ -64,13 +83,7 @@ class IrohaBot(commands.Bot):
         if self._startup_synced:
             return
         try:
-            guild_count = 0
-            for guild_id in config.BACKUP_ALLOWED_GUILD_IDS:
-                guild_obj = discord.Object(id=guild_id)
-                self.tree.copy_global_to(guild=guild_obj)
-                synced = await self.tree.sync(guild=guild_obj)
-                guild_count += 1
-                self.logger.info("Guild sync %s: %s commands", guild_id, len(synced))
+            guild_count = await self.sync_allowed_guild_commands(remove_global=True)
             self._startup_synced = True
             self.logger.info("Startup guild sync complete for %s guild(s)", guild_count)
         except Exception as exc:

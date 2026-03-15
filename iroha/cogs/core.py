@@ -26,22 +26,15 @@ class CoreCog(commands.Cog):
     @commands.command(name="sync")
     @commands.is_owner()
     async def sync_prefix(self, ctx: commands.Context, scope: str | None = None):
-        guild = ctx.guild
         scope_value = (scope or "guild").strip().lower()
 
         try:
             if scope_value == "global":
-                synced = await self.bot.tree.sync()
-                await ctx.reply(f"Đã sync global: {len(synced)} lệnh.")
+                await ctx.reply("Mode global đã tắt để tránh trùng lệnh. Dùng `!sync`.")
                 return
 
-            if guild is None:
-                await ctx.reply("Dùng trong server để sync guild, hoặc `!sync global`.")
-                return
-
-            self.bot.tree.copy_global_to(guild=guild)
-            synced = await self.bot.tree.sync(guild=guild)
-            await ctx.reply(f"Đã sync guild `{guild.name}`: {len(synced)} lệnh.")
+            guild_count = await self.bot.sync_allowed_guild_commands(remove_global=True)
+            await ctx.reply(f"Đã sync và làm sạch lệnh cho {guild_count} guild cho phép.")
         except Exception as exc:
             await ctx.reply(f"Sync lỗi: {exc}")
 
@@ -140,7 +133,7 @@ class CoreCog(commands.Cog):
         embed.add_field(name="Reminder", value="`/remind`, `/remind_list`", inline=False)
         embed.add_field(name="Backup", value="`/backupwatch_add`, `/backupwatch_remove`, `/backupwatch_list`, `/backup_manual`, `/backup_all`, `/backup_status`", inline=False)
         embed.add_field(name="Moderation", value="`/muted`, `/clearbot`", inline=False)
-        embed.add_field(name="Owner", value="`!sync` (guild), `!sync global`", inline=False)
+        embed.add_field(name="Owner", value="`!sync`", inline=False)
         embed.set_footer(text="Iroha")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
