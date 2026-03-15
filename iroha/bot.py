@@ -35,6 +35,7 @@ class IrohaBot(commands.Bot):
             },
         )
         self.backup_service = DropboxBackupService(self.backup_manifest_store, self.backup_stats_store)
+        self._startup_synced = False
 
     async def setup_hook(self):
         await self.settings_store.read()
@@ -60,9 +61,18 @@ class IrohaBot(commands.Bot):
 
     async def on_ready(self):
         self.logger.info("Iroha online as %s", self.user)
+        if self._startup_synced:
+            return
         try:
-            synced = await self.tree.sync()
-            self.logger.info("Synced %s commands", len(synced))
+            guild_count = 0
+            for guild_id in config.BACKUP_ALLOWED_GUILD_IDS:
+                guild_obj = discord.Object(id=guild_id)
+                self.tree.copy_global_to(guild=guild_obj)
+                synced = await self.tree.sync(guild=guild_obj)
+                guild_count += 1
+                self.logger.info("Guild sync %s: %s commands", guild_id, len(synced))
+            self._startup_synced = True
+            self.logger.info("Startup guild sync complete for %s guild(s)", guild_count)
         except Exception as exc:
             self.logger.error("Command sync failed: %s", exc)
 

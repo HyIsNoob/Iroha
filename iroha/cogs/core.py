@@ -23,6 +23,28 @@ class CoreCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    @commands.command(name="sync")
+    @commands.is_owner()
+    async def sync_prefix(self, ctx: commands.Context, scope: str | None = None):
+        guild = ctx.guild
+        scope_value = (scope or "guild").strip().lower()
+
+        try:
+            if scope_value == "global":
+                synced = await self.bot.tree.sync()
+                await ctx.reply(f"Đã sync global: {len(synced)} lệnh.")
+                return
+
+            if guild is None:
+                await ctx.reply("Dùng trong server để sync guild, hoặc `!sync global`.")
+                return
+
+            self.bot.tree.copy_global_to(guild=guild)
+            synced = await self.bot.tree.sync(guild=guild)
+            await ctx.reply(f"Đã sync guild `{guild.name}`: {len(synced)} lệnh.")
+        except Exception as exc:
+            await ctx.reply(f"Sync lỗi: {exc}")
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot:
@@ -44,6 +66,13 @@ class CoreCog(commands.Cog):
             )
         else:
             raise error
+
+    @sync_prefix.error
+    async def sync_prefix_error(self, ctx: commands.Context, error: commands.CommandError):
+        if isinstance(error, commands.NotOwner):
+            await ctx.reply("Chỉ owner mới dùng được lệnh này.")
+            return
+        await ctx.reply(f"Không chạy được lệnh sync: {error}")
 
     @app_commands.command(name="yesno", description="Trả lời ngẫu nhiên Yes hoặc No")
     @app_commands.checks.cooldown(1, 5.0, key=lambda i: (i.guild_id, i.user.id))
@@ -106,11 +135,12 @@ class CoreCog(commands.Cog):
         embed = discord.Embed(title="Iroha — Danh sách lệnh", color=discord.Color(0xC9A0DC))
         embed.add_field(name="Core", value="`/yesno`, `/random`, `/team`, `/playgame`, `/hangout`, `/iroha`, `/help`", inline=False)
         embed.add_field(name="Voice", value="`/autojoin`, `/connect`, `/disconnect`, `/speak`, `/voiceinout`, `/voiceactivity`, `/voicestream`", inline=False)
-        embed.add_field(name="Anime & Quotes", value="`/anime`, `/quote`, `/quote_save`, `/quote_list`, `/quote_delete`, `/quote_top`, `/quote_random`, `!quote (reply)`, `Lưu quote`", inline=False)
+        embed.add_field(name="Anime & Quotes", value="`/anime`, `/anime_recommend`, `/anime_season`, `/anime_schedule`, `/character`, `/quote`, `/quote_save`, `/quote_list`, `/quote_delete`, `/quote_top`, `/quote_random`, `!quote (reply)`, `Lưu quote`", inline=False)
         embed.add_field(name="Fun", value="`/ship`, `/8ball`, `/rate`", inline=False)
         embed.add_field(name="Reminder", value="`/remind`, `/remind_list`", inline=False)
         embed.add_field(name="Backup", value="`/backupwatch_add`, `/backupwatch_remove`, `/backupwatch_list`, `/backup_manual`, `/backup_all`, `/backup_status`", inline=False)
         embed.add_field(name="Moderation", value="`/muted`, `/clearbot`", inline=False)
+        embed.add_field(name="Owner", value="`!sync` (guild), `!sync global`", inline=False)
         embed.set_footer(text="Iroha")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
