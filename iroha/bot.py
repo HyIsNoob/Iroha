@@ -35,7 +35,6 @@ class IrohaBot(commands.Bot):
             },
         )
         self.backup_service = DropboxBackupService(self.backup_manifest_store, self.backup_stats_store)
-        self._startup_synced = False
 
     async def sync_allowed_guild_commands(self, remove_global: bool = True) -> int:
         if remove_global:
@@ -80,14 +79,6 @@ class IrohaBot(commands.Bot):
 
     async def on_ready(self):
         self.logger.info("Iroha online as %s", self.user)
-        if self._startup_synced:
-            return
-        try:
-            guild_count = await self.sync_allowed_guild_commands(remove_global=True)
-            self._startup_synced = True
-            self.logger.info("Startup guild sync complete for %s guild(s)", guild_count)
-        except Exception as exc:
-            self.logger.error("Command sync failed: %s", exc)
 
     async def get_guild_settings(self, guild_id: int) -> dict:
         data = await self.settings_store.read()
