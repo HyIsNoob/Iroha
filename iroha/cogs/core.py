@@ -5,19 +5,17 @@ from discord import app_commands
 from discord.ext import commands
 
 _MENTION_RESPONSES = [
-    "Iroha nghe rồi, bạn cần gì không?",
-    "Có mình đây! Bạn gọi mình ạ?",
-    "Hmm? Bạn tag mình có chuyện gì vậy?",
-    "Ủa, tìm mình hả? Mình đang ở đây nè.",
+    "Iroha nghe rồi. Cần gì không?",
+    "Hmm? Có chuyện gì vậy?",
+    "Mình đang ở đây. Cần gì thì nói.",
     "Bạn gọi mình? Nói đi mình nghe.",
-    "Có việc gì không? Mình sẵn sàng giúp đó.",
-    "Mình đây~ Cần gì thì cứ nói nha.",
-    "OwO Bạn tag mình rồi đó. Cần gì không?",
-    "Gọi mình mà không nói gì hả? Thôi mình ở đây chờ.",
-    "Bạn vừa tag mình... chắc nhớ mình quá á?",
-    "Dạ, Iroha đây ạ! Bạn cần gì không?",
-    "Hmm mình thấy tên mình rồi. Bạn ổn không?",
-    "Bạn cần giúp gì không? Dùng /help để xem danh sách lệnh nha.",
+    "Gọi mình mà không nói gì... thôi mình ở đây chờ.",
+    "Bạn vừa tag mình... chắc nhớ mình quá.",
+    "Mình thấy tên mình rồi. Bạn cần gì không?",
+    "Ừ, mình đây. Nói đi.",
+    "Hôm nay có việc gì à?",
+    "Hmm.",
+    "Dùng /help nếu cần xem danh sách lệnh.",
 ]
 
 
@@ -51,9 +49,12 @@ class CoreCog(commands.Cog):
     @app_commands.checks.cooldown(1, 5.0, key=lambda i: (i.guild_id, i.user.id))
     async def yesno(self, interaction: discord.Interaction, question: str):
         answer = random.choice(["Yes", "No"])
-        embed = discord.Embed(title="Iroha Yes/No", color=discord.Color.blurple())
+        color = discord.Color(0x27AE60) if answer == "Yes" else discord.Color(0xE74C3C)
+        embed = discord.Embed(color=color)
+        embed.set_author(name="Yes / No")
         embed.add_field(name="Câu hỏi", value=question, inline=False)
-        embed.add_field(name="Kết quả", value=answer, inline=False)
+        embed.add_field(name="Kết quả", value=f"**{answer}**", inline=False)
+        embed.set_footer(text="Iroha")
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="random", description="Random 1 lựa chọn từ danh sách")
@@ -61,10 +62,14 @@ class CoreCog(commands.Cog):
     async def random_choice(self, interaction: discord.Interaction, options: str):
         values = [item.strip() for item in options.split(",") if item.strip()]
         if len(values) < 2:
-            await interaction.response.send_message("Cho mình ít nhất 2 lựa chọn ngăn cách bằng dấu phẩy nha!", ephemeral=True)
+            await interaction.response.send_message("Cần ít nhất 2 lựa chọn, ngăn cách bằng dấu phẩy.", ephemeral=True)
             return
         picked = random.choice(values)
-        await interaction.response.send_message(f"Mình chọn **{picked}** nha!")
+        embed = discord.Embed(color=discord.Color(0xC9A0DC))
+        embed.set_author(name="Random")
+        embed.add_field(name="Kết quả", value=f"**{picked}**", inline=False)
+        embed.set_footer(text="Iroha")
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="team", description="Chia người vào số team")
     async def team(self, interaction: discord.Interaction, members: str, teams: app_commands.Range[int, 2, 20]):
@@ -87,23 +92,26 @@ class CoreCog(commands.Cog):
     @app_commands.default_permissions(manage_guild=True)
     async def iroha(self, interaction: discord.Interaction):
         if interaction.guild is None or interaction.channel is None:
-            await interaction.response.send_message("Lệnh này chỉ dùng được trong server thôi nha.", ephemeral=True)
+            await interaction.response.send_message("Lệnh này chỉ dùng được trong server.", ephemeral=True)
             return
 
         await self.bot.patch_guild_settings(
             interaction.guild.id,
             lambda guild: guild.update({"log_channel_id": interaction.channel.id}),
         )
-        await interaction.response.send_message("Xong rồi! Từ giờ mình sẽ log ở đây nha.")
+        await interaction.response.send_message("Xong. Từ giờ mình sẽ log ở đây.")
 
     @app_commands.command(name="help", description="Hiển thị hướng dẫn lệnh")
     async def help(self, interaction: discord.Interaction):
-        embed = discord.Embed(title="Iroha Help", color=discord.Color.gold())
+        embed = discord.Embed(title="Iroha — Danh sách lệnh", color=discord.Color(0xC9A0DC))
         embed.add_field(name="Core", value="`/yesno`, `/random`, `/team`, `/playgame`, `/hangout`, `/iroha`, `/help`", inline=False)
         embed.add_field(name="Voice", value="`/autojoin`, `/connect`, `/disconnect`, `/speak`, `/voiceinout`, `/voiceactivity`, `/voicestream`", inline=False)
+        embed.add_field(name="Anime & Quotes", value="`/anime`, `/quote_save`, `/quote_list`, `/quote_delete`, `/quote_top`, `/quote_random`, `Lưu quote`", inline=False)
+        embed.add_field(name="Fun", value="`/ship`, `/8ball`, `/rate`", inline=False)
+        embed.add_field(name="Reminder", value="`/remind`, `/remind_list`", inline=False)
         embed.add_field(name="Backup", value="`/backupwatch_add`, `/backupwatch_remove`, `/backupwatch_list`, `/backup_manual`, `/backup_all`, `/backup_status`", inline=False)
-        embed.add_field(name="Fun", value="`/anime`, `/quote_save`, `/quote_random`, `Lưu quote`", inline=False)
         embed.add_field(name="Moderation", value="`/muted`, `/clearbot`", inline=False)
+        embed.set_footer(text="Iroha")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 

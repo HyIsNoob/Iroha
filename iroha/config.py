@@ -32,6 +32,7 @@ BACKUP_STATS_FILE = DATA_DIR / "backup_stats.json"
 PLAYGAME_FILE = DATA_DIR / "playgame_rooms.json"
 HANGOUT_FILE = DATA_DIR / "hangout_events.json"
 QUOTES_FILE = DATA_DIR / "quotes.json"
+REMINDERS_FILE = DATA_DIR / "reminders.json"
 
 
 def validate_required_env() -> None:
