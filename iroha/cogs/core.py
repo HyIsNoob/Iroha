@@ -106,7 +106,7 @@ class CoreCog(commands.Cog):
         embed = discord.Embed(title="Iroha — Danh sách lệnh", color=discord.Color(0xC9A0DC))
         embed.add_field(name="Core", value="`/yesno`, `/random`, `/team`, `/playgame`, `/hangout`, `/iroha`, `/help`", inline=False)
         embed.add_field(name="Voice", value="`/autojoin`, `/connect`, `/disconnect`, `/speak`, `/voiceinout`, `/voiceactivity`, `/voicestream`", inline=False)
-        embed.add_field(name="Anime & Quotes", value="`/anime`, `/quote_save`, `/quote_list`, `/quote_delete`, `/quote_top`, `/quote_random`, `Lưu quote`", inline=False)
+        embed.add_field(name="Anime & Quotes", value="`/anime`, `/quote`, `/quote_save`, `/quote_list`, `/quote_delete`, `/quote_top`, `/quote_random`, `!quote (reply)`, `Lưu quote`", inline=False)
         embed.add_field(name="Fun", value="`/ship`, `/8ball`, `/rate`", inline=False)
         embed.add_field(name="Reminder", value="`/remind`, `/remind_list`", inline=False)
         embed.add_field(name="Backup", value="`/backupwatch_add`, `/backupwatch_remove`, `/backupwatch_list`, `/backup_manual`, `/backup_all`, `/backup_status`", inline=False)

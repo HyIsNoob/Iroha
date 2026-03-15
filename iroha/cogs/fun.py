@@ -56,9 +56,7 @@ class FunCog(commands.Cog):
         nguoi1: discord.Member,
         nguoi2: discord.Member,
     ):
-        seed = min(nguoi1.id, nguoi2.id) * 31 + max(nguoi1.id, nguoi2.id)
-        rng = random.Random(seed)
-        score = rng.randint(0, 100)
+        score = random.randint(0, 100)
         comment = _ship_comment(score)
         filled = round(score / 10)
         bar = "█" * filled + "░" * (10 - filled)
@@ -93,8 +91,7 @@ class FunCog(commands.Cog):
 
     @app_commands.command(name="rate", description="Iroha đánh giá một thứ gì đó")
     async def rate(self, interaction: discord.Interaction, thu: str):
-        rng = random.Random(thu.strip().lower())
-        score = rng.randint(0, 10)
+        score = random.randint(0, 10)
         comment = next(c for lo, hi, c in _RATE_COMMENTS if lo <= score < hi)
         filled = score
         bar = "█" * filled + "░" * (10 - filled)

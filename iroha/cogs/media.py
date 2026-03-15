@@ -1,4 +1,5 @@
 import random
+import re
 from datetime import datetime, timezone
 
 import aiohttp
@@ -8,6 +9,7 @@ from discord.ext import commands
 
 _IROHA_COLOR = discord.Color(0xC9A0DC)
 _QUOTES_PAGE_SIZE = 8
+_MESSAGE_LINK_RE = re.compile(r"https?://(?:canary\.|ptb\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)")
 
 
 class MediaCog(commands.Cog):
@@ -24,19 +26,15 @@ class MediaCog(commands.Cog):
     async def cog_unload(self):
         self.bot.tree.remove_command(self.quote_context_menu.name, type=self.quote_context_menu.type)
 
-    async def _save_quote(self, interaction: discord.Interaction, message: discord.Message):
-        if interaction.guild is None:
-            await interaction.response.send_message("Quote chỉ dùng trong server.", ephemeral=True)
-            return
+    async def _store_quote(self, guild_id: int, message: discord.Message, saved_by_id: int) -> tuple[bool, str]:
         content = (message.content or "").strip()
         if not content:
-            await interaction.response.send_message("Tin nhắn này không có text để lưu quote.", ephemeral=True)
-            return
+            return False, "Tin nhắn này không có text để lưu quote."
 
-        guild_id = str(interaction.guild.id)
+        guild_key = str(guild_id)
 
         def updater(data: dict) -> dict:
-            guild_quotes = data.setdefault("guilds", {}).setdefault(guild_id, {})
+            guild_quotes = data.setdefault("guilds", {}).setdefault(guild_key, {})
             quotes = guild_quotes.setdefault("quotes", {})
             quotes.setdefault(
                 str(message.id),
@@ -48,20 +46,60 @@ class MediaCog(commands.Cog):
                     "content": content,
                     "jump_url": message.jump_url,
                     "created_at": message.created_at.isoformat() if message.created_at else datetime.now(timezone.utc).isoformat(),
-                    "saved_by_id": interaction.user.id,
+                    "saved_by_id": saved_by_id,
                     "saved_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
             return data
 
         before_data = await self.bot.quote_store.read()
-        existing = before_data.get("guilds", {}).get(guild_id, {}).get("quotes", {})
+        existing = before_data.get("guilds", {}).get(guild_key, {}).get("quotes", {})
         if str(message.id) in existing:
-            await interaction.response.send_message("Quote này đã được lưu rồi.", ephemeral=True)
-            return
+            return False, "Quote này đã được lưu rồi."
 
         await self.bot.quote_store.update(updater)
-        await interaction.response.send_message("Lưu quote xong.", ephemeral=True)
+        return True, "Lưu quote xong."
+
+    async def _get_message_from_input(
+        self,
+        interaction: discord.Interaction,
+        raw_value: str,
+        channel: discord.TextChannel | None = None,
+    ) -> discord.Message | None:
+        if interaction.guild is None:
+            return None
+
+        raw_value = raw_value.strip()
+        target_channel = channel
+        message_id: int | None = None
+
+        link_match = _MESSAGE_LINK_RE.fullmatch(raw_value)
+        if link_match:
+            _, channel_id, raw_message_id = link_match.groups()
+            found_channel = interaction.guild.get_channel(int(channel_id))
+            if isinstance(found_channel, discord.TextChannel):
+                target_channel = found_channel
+                message_id = int(raw_message_id)
+        else:
+            try:
+                message_id = int(raw_value)
+            except ValueError:
+                return None
+
+        if not isinstance(target_channel, discord.TextChannel) or message_id is None:
+            return None
+
+        try:
+            return await target_channel.fetch_message(message_id)
+        except discord.NotFound:
+            return None
+
+    async def _save_quote(self, interaction: discord.Interaction, message: discord.Message):
+        if interaction.guild is None:
+            await interaction.response.send_message("Quote chỉ dùng trong server.", ephemeral=True)
+            return
+        ok, reply = await self._store_quote(interaction.guild.id, message, interaction.user.id)
+        await interaction.response.send_message(reply, ephemeral=True)
 
     @app_commands.command(name="anime", description="Xem thông tin anime từ Jikan")
     async def anime(self, interaction: discord.Interaction, ten: app_commands.Range[str, 2, 100]):
@@ -118,15 +156,65 @@ class MediaCog(commands.Cog):
         if not isinstance(target_channel, discord.TextChannel):
             await interaction.response.send_message("Chỉ lưu quote từ text channel được.", ephemeral=True)
             return
-        try:
-            target_message = await target_channel.fetch_message(int(message_id))
-        except (ValueError, discord.NotFound):
+        target_message = await self._get_message_from_input(interaction, message_id, target_channel)
+        if target_message is None:
             await interaction.response.send_message("Không tìm thấy message đó.", ephemeral=True)
+            return
+        await self._save_quote(interaction, target_message)
+
+    @app_commands.command(name="quote", description="Lưu quote từ message link hoặc message ID")
+    async def quote(
+        self,
+        interaction: discord.Interaction,
+        tin_nhan: str,
+        channel: discord.TextChannel | None = None,
+    ):
+        if interaction.guild is None:
+            await interaction.response.send_message("Quote chỉ dùng trong server.", ephemeral=True)
+            return
+        target_channel = channel or interaction.channel
+        if not isinstance(target_channel, discord.TextChannel):
+            await interaction.response.send_message("Chỉ lưu quote từ text channel được.", ephemeral=True)
+            return
+
+        target_message = await self._get_message_from_input(interaction, tin_nhan, target_channel)
+        if target_message is None:
+            await interaction.response.send_message(
+                "Không đọc được tin nhắn đó. Dùng message ID hoặc link tin nhắn đầy đủ.",
+                ephemeral=True,
+            )
             return
         await self._save_quote(interaction, target_message)
 
     async def quote_save_context(self, interaction: discord.Interaction, message: discord.Message):
         await self._save_quote(interaction, message)
+
+    @commands.command(name="quote")
+    async def quote_prefix(self, ctx: commands.Context):
+        if ctx.guild is None:
+            await ctx.reply("Quote chỉ dùng trong server.")
+            return
+
+        reference = ctx.message.reference
+        if reference is None:
+            await ctx.reply("Reply vào tin nhắn cần lưu rồi dùng `!quote`.")
+            return
+
+        target_message = reference.resolved if isinstance(reference.resolved, discord.Message) else None
+        if target_message is None and reference.message_id is not None:
+            channel = ctx.channel
+            if isinstance(channel, discord.TextChannel):
+                try:
+                    target_message = await channel.fetch_message(reference.message_id)
+                except discord.NotFound:
+                    target_message = None
+
+        if target_message is None:
+            await ctx.reply("Mình không đọc được tin nhắn được reply.")
+            return
+
+        ok, reply = await self._store_quote(ctx.guild.id, target_message, ctx.author.id)
+        await ctx.reply(reply)
 
     @app_commands.command(name="quote_random", description="Bốc ngẫu nhiên một quote trong server")
     async def quote_random(self, interaction: discord.Interaction, user: discord.Member | None = None):
