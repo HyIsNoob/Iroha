@@ -117,8 +117,4 @@ Invoke-RestMethod http://localhost:10000/health
 
 Đăng ký [UptimeRobot](https://uptimerobot.com) → monitor URL `https://<app>.onrender.com/health` mỗi **5 phút** (HTTP).
 
-<<<<<<< Updated upstream
 ---
-=======
----
->>>>>>> Stashed changes

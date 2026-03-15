@@ -5,6 +5,7 @@ from pathlib import Path
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.errors import ConnectionClosed
 from gtts import gTTS
 
 
@@ -14,6 +15,10 @@ class VoiceCog(commands.Cog):
         self._autojoin_locks: dict[int, asyncio.Lock] = {}
         self._autojoin_fail_count: dict[int, int] = {}
         self._autojoin_next_retry: dict[int, float] = {}
+
+    @staticmethod
+    def _is_voice_4006(exc: Exception) -> bool:
+        return isinstance(exc, ConnectionClosed) and getattr(exc, "code", None) == 4006
 
     async def _get_author_voice_channel(self, interaction: discord.Interaction):
         if interaction.user.voice is None or interaction.user.voice.channel is None:
@@ -35,13 +40,19 @@ class VoiceCog(commands.Cog):
             if voice_client and voice_client.is_connected():
                 await voice_client.move_to(voice_channel)
             else:
-                await voice_channel.connect(timeout=12, reconnect=False, self_deaf=True)
+                await voice_channel.connect(timeout=12, reconnect=True, self_deaf=True)
         except TimeoutError:
             await interaction.response.send_message(
                 "Kết nối voice bị timeout, thử lại sau một chút nha!", ephemeral=True
             )
             return
         except Exception as exc:
+            if self._is_voice_4006(exc):
+                await interaction.response.send_message(
+                    "Voice đang lỗi kết nối (4006). Bạn kiểm tra giúp mình: chỉ chạy 1 instance bot duy nhất và thử lại sau ít phút nha.",
+                    ephemeral=True,
+                )
+                return
             await interaction.response.send_message(
                 f"Mình vào voice không được: {exc}", ephemeral=True
             )
@@ -107,6 +118,12 @@ class VoiceCog(commands.Cog):
             await interaction.followup.send("Kết nối voice bị timeout, bạn thử lại sau ít giây nha.", ephemeral=True)
             return
         except Exception as exc:
+            if self._is_voice_4006(exc):
+                await interaction.followup.send(
+                    "Voice đang lỗi kết nối (4006), nên mình chưa nói được. Bạn đảm bảo chỉ có 1 bot instance đang chạy rồi thử lại nha.",
+                    ephemeral=True,
+                )
+                return
             await interaction.followup.send(f"Mình vào voice chưa được: {exc}", ephemeral=True)
             return
 
@@ -169,6 +186,16 @@ class VoiceCog(commands.Cog):
                         self._autojoin_fail_count[guild_id] = fail_count
                         delay = min(300, 15 * (2 ** (fail_count - 1)))
                         self._autojoin_next_retry[guild_id] = asyncio.get_running_loop().time() + delay
+                        if self._is_voice_4006(exc) and fail_count >= 3:
+                            await self.bot.patch_guild_settings(
+                                guild_id,
+                                lambda guild: guild.update({"autojoin_enabled": False}),
+                            )
+                            await self.bot.guild_log(
+                                guild_id,
+                                "Autojoin đã tự tắt sau nhiều lần lỗi voice 4006. Bạn có thể bật lại bằng /autojoin khi ổn định.",
+                            )
+                            return
                         await self.bot.guild_log(
                             guild_id,
                             f"Autojoin thất bại ({type(exc).__name__}), sẽ thử lại sau {delay}s.",
