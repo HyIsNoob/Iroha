@@ -40,7 +40,7 @@ class VoiceCog(commands.Cog):
             if voice_client and voice_client.is_connected():
                 await voice_client.move_to(voice_channel)
             else:
-                await voice_channel.connect(timeout=12, reconnect=True, self_deaf=True)
+                await voice_channel.connect(timeout=12, reconnect=False, self_deaf=True)
         except TimeoutError:
             await interaction.response.send_message(
                 "Kết nối voice bị timeout, thử lại sau một chút nha!", ephemeral=True
