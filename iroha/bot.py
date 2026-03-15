@@ -21,6 +21,7 @@ class IrohaBot(commands.Bot):
         self.settings_store = JsonStore(config.SETTINGS_FILE, {"guilds": {}})
         self.playgame_store = JsonStore(config.PLAYGAME_FILE, {"rooms": {}})
         self.hangout_store = JsonStore(config.HANGOUT_FILE, {"events": {}})
+        self.quote_store = JsonStore(config.QUOTES_FILE, {"guilds": {}})
         self.backup_manifest_store = JsonStore(config.BACKUP_MANIFEST_FILE, {})
         self.backup_stats_store = JsonStore(
             config.BACKUP_STATS_FILE,
@@ -38,6 +39,7 @@ class IrohaBot(commands.Bot):
         await self.settings_store.read()
         await self.playgame_store.read()
         await self.hangout_store.read()
+        await self.quote_store.read()
         await self.backup_manifest_store.read()
         await self.backup_stats_store.read()
 
@@ -47,6 +49,7 @@ class IrohaBot(commands.Bot):
             "iroha.cogs.voice",
             "iroha.cogs.backup",
             "iroha.cogs.moderation",
+            "iroha.cogs.media",
         ]
         for extension in extensions:
             await self.load_extension(extension)
@@ -68,6 +71,8 @@ class IrohaBot(commands.Bot):
                 "log_channel_id": None,
                 "autojoin_enabled": False,
                 "voiceinout_enabled": False,
+                "voiceactivity_enabled": False,
+                "voicestream_enabled": False,
                 "backup_watch_channels": [],
                 "muted_rules": {},
             },
@@ -85,6 +90,8 @@ class IrohaBot(commands.Bot):
                     "log_channel_id": None,
                     "autojoin_enabled": False,
                     "voiceinout_enabled": False,
+                    "voiceactivity_enabled": False,
+                    "voicestream_enabled": False,
                     "backup_watch_channels": [],
                     "muted_rules": {},
                 },

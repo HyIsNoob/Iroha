@@ -100,8 +100,9 @@ class CoreCog(commands.Cog):
     async def help(self, interaction: discord.Interaction):
         embed = discord.Embed(title="Iroha Help", color=discord.Color.gold())
         embed.add_field(name="Core", value="`/yesno`, `/random`, `/team`, `/playgame`, `/hangout`, `/iroha`, `/help`", inline=False)
-        embed.add_field(name="Voice", value="`/autojoin`, `/connect`, `/disconnect`, `/speak`, `/voiceinout`", inline=False)
+        embed.add_field(name="Voice", value="`/autojoin`, `/connect`, `/disconnect`, `/speak`, `/voiceinout`, `/voiceactivity`, `/voicestream`", inline=False)
         embed.add_field(name="Backup", value="`/backupwatch_add`, `/backupwatch_remove`, `/backupwatch_list`, `/backup_manual`, `/backup_all`, `/backup_status`", inline=False)
+        embed.add_field(name="Fun", value="`/anime`, `/quote_save`, `/quote_random`, `Lưu quote`", inline=False)
         embed.add_field(name="Moderation", value="`/muted`, `/clearbot`", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
