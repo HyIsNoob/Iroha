@@ -40,6 +40,65 @@ class VoiceCog(commands.Cog):
         self._autojoin_fail_count: dict[int, int] = {}
         self._autojoin_next_retry: dict[int, float] = {}
         self._tts_locks: dict[int, asyncio.Lock] = {}
+        self._health_fail_count: dict[int, int] = {}
+        self._health_next_retry: dict[int, float] = {}
+        self._voice_health_task: asyncio.Task | None = None
+
+    async def cog_load(self):
+        self._voice_health_task = asyncio.create_task(self._voice_health_loop())
+
+    def cog_unload(self):
+        if self._voice_health_task is not None and not self._voice_health_task.done():
+            self._voice_health_task.cancel()
+
+    async def _voice_health_loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            await asyncio.sleep(30)
+            now = asyncio.get_running_loop().time()
+            for guild in list(self.bot.guilds):
+                voice_client = guild.voice_client
+                if voice_client is None:
+                    self._health_fail_count.pop(guild.id, None)
+                    self._health_next_retry.pop(guild.id, None)
+                    continue
+                if voice_client.is_connected():
+                    self._health_fail_count[guild.id] = 0
+                    self._health_next_retry[guild.id] = 0.0
+                    continue
+                channel = getattr(voice_client, "channel", None)
+                if channel is None:
+                    continue
+                if now < self._health_next_retry.get(guild.id, 0.0):
+                    continue
+
+                lock = self._autojoin_locks.setdefault(guild.id, asyncio.Lock())
+                if lock.locked():
+                    continue
+
+                async with lock:
+                    try:
+                        existing = guild.voice_client
+                        if existing is not None and existing.is_connected():
+                            continue
+                        if existing is not None:
+                            try:
+                                await existing.disconnect(force=True)
+                            except Exception:
+                                pass
+                        await channel.connect(timeout=12, reconnect=True, self_deaf=True)
+                        self._health_fail_count[guild.id] = 0
+                        self._health_next_retry[guild.id] = 0.0
+                        await self.bot.guild_log(guild.id, f"Voice reconnect lại thành công ở {channel.mention}.")
+                    except Exception as exc:
+                        fail_count = self._health_fail_count.get(guild.id, 0) + 1
+                        self._health_fail_count[guild.id] = fail_count
+                        delay = min(120, 5 * (2 ** (fail_count - 1)))
+                        self._health_next_retry[guild.id] = asyncio.get_running_loop().time() + delay
+                        await self.bot.guild_log(
+                            guild.id,
+                            f"Voice health-check reconnect lỗi ({type(exc).__name__}), thử lại sau {delay}s.",
+                        )
 
     @staticmethod
     def _is_voice_4006(exc: Exception) -> bool:
@@ -132,7 +191,7 @@ class VoiceCog(commands.Cog):
             if voice_client and voice_client.is_connected():
                 await voice_client.move_to(voice_channel)
             else:
-                await voice_channel.connect(timeout=12, reconnect=False, self_deaf=True)
+                await voice_channel.connect(timeout=12, reconnect=True, self_deaf=True)
         except TimeoutError:
             await interaction.response.send_message(
                 "Kết nối voice bị timeout, thử lại sau một chút nha!", ephemeral=True
@@ -231,7 +290,7 @@ class VoiceCog(commands.Cog):
             if voice_client and voice_client.is_connected():
                 await voice_client.move_to(voice_channel)
             else:
-                voice_client = await voice_channel.connect(timeout=12, reconnect=False, self_deaf=True)
+                voice_client = await voice_channel.connect(timeout=12, reconnect=True, self_deaf=True)
         except TimeoutError:
             await interaction.followup.send("Kết nối voice bị timeout, bạn thử lại sau ít giây nha.", ephemeral=True)
             return
@@ -301,14 +360,14 @@ class VoiceCog(commands.Cog):
                 async with lock:
                     try:
                         await asyncio.sleep(1)
-                        await after.channel.connect(timeout=12, reconnect=False, self_deaf=True)
+                        await after.channel.connect(timeout=12, reconnect=True, self_deaf=True)
                         self._autojoin_fail_count[guild_id] = 0
                         self._autojoin_next_retry[guild_id] = 0.0
                         await self.bot.guild_log(guild_id, f"Mình tự động join {after.channel.mention} rồi nha!")
                     except Exception as exc:
                         fail_count = self._autojoin_fail_count.get(guild_id, 0) + 1
                         self._autojoin_fail_count[guild_id] = fail_count
-                        delay = min(300, 15 * (2 ** (fail_count - 1)))
+                        delay = min(300, 5 * (2 ** (fail_count - 1)))
                         self._autojoin_next_retry[guild_id] = asyncio.get_running_loop().time() + delay
                         if self._is_voice_4006(exc) and fail_count >= 3:
                             await self.bot.patch_guild_settings(

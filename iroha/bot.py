@@ -23,6 +23,7 @@ class IrohaBot(commands.Bot):
         self.hangout_store = JsonStore(config.HANGOUT_FILE, {"events": {}})
         self.quote_store = JsonStore(config.QUOTES_FILE, {"guilds": {}})
         self.reminder_store = JsonStore(config.REMINDERS_FILE, {"reminders": []})
+        self.notify_store = JsonStore(config.NOTIFY_FILE, {"guilds": {}})
         self.backup_manifest_store = JsonStore(config.BACKUP_MANIFEST_FILE, {})
         self.backup_stats_store = JsonStore(
             config.BACKUP_STATS_FILE,
@@ -61,6 +62,7 @@ class IrohaBot(commands.Bot):
         await self.hangout_store.read()
         await self.quote_store.read()
         await self.reminder_store.read()
+        await self.notify_store.read()
         await self.backup_manifest_store.read()
         await self.backup_stats_store.read()
 
@@ -73,6 +75,7 @@ class IrohaBot(commands.Bot):
             "iroha.cogs.media",
             "iroha.cogs.fun",
             "iroha.cogs.reminder",
+            "iroha.cogs.notify",
         ]
         for extension in extensions:
             await self.load_extension(extension)
@@ -135,3 +138,58 @@ class IrohaBot(commands.Bot):
             await channel.send(message)
         except Exception:
             return
+
+    @staticmethod
+    def _default_notify_user_settings() -> dict:
+        return {
+            "enabled": False,
+            "paused_until": None,
+            "only_when_not_in_voice": True,
+            "cooldown_seconds": 300,
+            "subscriptions": [],
+        }
+
+    async def get_notify_user_settings(self, guild_id: int, user_id: int) -> dict:
+        data = await self.notify_store.read()
+        gid = str(guild_id)
+        uid = str(user_id)
+        changed = False
+        guilds = data.setdefault("guilds", {})
+        if gid not in guilds:
+            guilds[gid] = {"subscribers": {}}
+            changed = True
+        subscribers = guilds[gid].setdefault("subscribers", {})
+        if uid not in subscribers:
+            subscribers[uid] = self._default_notify_user_settings()
+            changed = True
+        user_settings = subscribers[uid]
+        if changed:
+            await self.notify_store.write(data)
+        return user_settings
+
+    async def patch_notify_user_settings(self, guild_id: int, user_id: int, patcher):
+        gid = str(guild_id)
+        uid = str(user_id)
+
+        def updater(data: dict) -> dict:
+            subscribers = data.setdefault("guilds", {}).setdefault(gid, {}).setdefault("subscribers", {})
+            user_settings = subscribers.setdefault(uid, self._default_notify_user_settings())
+            patcher(user_settings)
+            return data
+
+        updated = await self.notify_store.update(updater)
+        return updated["guilds"][gid]["subscribers"][uid]
+
+    async def get_notify_subscribers(self, guild_id: int) -> dict:
+        data = await self.notify_store.read()
+        gid = str(guild_id)
+        changed = False
+        guilds = data.setdefault("guilds", {})
+        if gid not in guilds:
+            guilds[gid] = {"subscribers": {}}
+            changed = True
+        guild_data = guilds[gid]
+        subscribers = guild_data.setdefault("subscribers", {})
+        if changed:
+            await self.notify_store.write(data)
+        return subscribers

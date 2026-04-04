@@ -1,3 +1,4 @@
+import asyncio
 import random
 import re
 from datetime import datetime, timezone
@@ -13,11 +14,30 @@ _QUOTES_PAGE_SIZE = 8
 _MESSAGE_LINK_RE = re.compile(r"https?://(?:canary\.|ptb\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)")
 _JIKAN_BASE = "https://api.jikan.moe/v4"
 _WEEKDAY_CHOICES = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+_GENRE_HINTS = {
+    "trinh tham": ["Mystery", "Detective", "Suspense"],
+    "trinhtham": ["Mystery", "Detective", "Suspense"],
+    "du hanh thoi gian": ["Time Travel", "Sci-Fi"],
+    "duhanhthoigian": ["Time Travel", "Sci-Fi"],
+    "kinh di": ["Horror", "Supernatural"],
+    "kinhdi": ["Horror", "Supernatural"],
+    "hai": ["Comedy"],
+    "hanh dong": ["Action"],
+    "hanhdong": ["Action"],
+    "tam ly": ["Psychological"],
+    "tamly": ["Psychological"],
+    "romance": ["Romance"],
+    "school": ["School"],
+    "fantasy": ["Fantasy"],
+    "isekai": ["Isekai", "Fantasy"],
+}
 
 
 class MediaCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._genre_name_to_id: dict[str, int] = {}
+        self._genre_cache_expire_at: float = 0.0
         self.quote_context_menu = app_commands.ContextMenu(
             name="Luu quote",
             callback=self.quote_save_context,
@@ -143,6 +163,145 @@ class MediaCog(commands.Cog):
             return status, None
         items = payload.get("data") or []
         return status, (items[0] if items else None)
+
+    @staticmethod
+    def _normalize_lookup(value: str) -> str:
+        compact = re.sub(r"[^a-z0-9\s]+", " ", (value or "").lower())
+        return " ".join(compact.split())
+
+    async def _load_genre_map(self) -> dict[str, int]:
+        now = asyncio.get_running_loop().time()
+        if self._genre_name_to_id and now < self._genre_cache_expire_at:
+            return self._genre_name_to_id
+
+        status, payload = await self._jikan_get("/genres/anime")
+        if status != 200 or not payload:
+            return self._genre_name_to_id
+
+        mapping: dict[str, int] = {}
+        for row in payload.get("data") or []:
+            mal_id = row.get("mal_id")
+            name = row.get("name")
+            if not mal_id or not name:
+                continue
+            mapping[self._normalize_lookup(name)] = int(mal_id)
+
+        if mapping:
+            self._genre_name_to_id = mapping
+            self._genre_cache_expire_at = now + 3600
+        return self._genre_name_to_id
+
+    async def _resolve_genre_ids(self, genre_text: str | None, reference_anime: dict | None) -> list[int]:
+        genre_map = await self._load_genre_map()
+        genre_ids: list[int] = []
+
+        if reference_anime is not None:
+            for row in reference_anime.get("genres") or []:
+                mal_id = row.get("mal_id")
+                if mal_id is None:
+                    continue
+                value = int(mal_id)
+                if value not in genre_ids:
+                    genre_ids.append(value)
+
+        if not genre_text:
+            return genre_ids
+
+        requested_terms: list[str] = []
+        for chunk in re.split(r",|;|/", genre_text):
+            token = self._normalize_lookup(chunk)
+            if not token:
+                continue
+            requested_terms.extend(_GENRE_HINTS.get(token, [token]))
+
+        for term in requested_terms:
+            normalized = self._normalize_lookup(term)
+            matched_id = genre_map.get(normalized)
+            if matched_id is None:
+                for name_key, name_id in genre_map.items():
+                    if normalized and (normalized in name_key or name_key in normalized):
+                        matched_id = name_id
+                        break
+            if matched_id is None:
+                continue
+            if matched_id not in genre_ids:
+                genre_ids.append(matched_id)
+
+        return genre_ids
+
+    @app_commands.command(name="anime_random", description="Random anime có thể lọc theo thể loại hoặc anime tham chiếu")
+    async def anime_random(
+        self,
+        interaction: discord.Interaction,
+        the_loai: app_commands.Range[str, 2, 80] | None = None,
+        tham_chieu: app_commands.Range[str, 2, 100] | None = None,
+    ):
+        if not await self._ensure_anime_allowed(interaction):
+            return
+        await interaction.response.defer()
+
+        reference_anime: dict | None = None
+        if tham_chieu:
+            status, reference_anime = await self._search_anime_first(tham_chieu)
+            if status != 200:
+                await interaction.followup.send("Không kết nối được Jikan. Thử lại sau.", ephemeral=True)
+                return
+            if reference_anime is None:
+                await interaction.followup.send(f"Không tìm thấy anime tham chiếu `{tham_chieu}`.", ephemeral=True)
+                return
+
+        genre_ids = await self._resolve_genre_ids(the_loai, reference_anime)
+        params = {"sfw": "true", "limit": 25}
+        if genre_ids:
+            params["genres"] = ",".join(str(value) for value in genre_ids[:4])
+
+        status, payload = await self._jikan_get("/anime", params)
+        items = (payload or {}).get("data") or [] if status == 200 else []
+        chosen = random.choice(items) if items else None
+
+        if chosen is None:
+            status, payload = await self._jikan_get("/random/anime", {"sfw": "true"})
+            if status != 200 or not payload:
+                await interaction.followup.send("Không lấy được anime random lúc này.", ephemeral=True)
+                return
+            chosen = payload.get("data")
+
+        if chosen is None:
+            await interaction.followup.send("Không có dữ liệu anime phù hợp để random.", ephemeral=True)
+            return
+
+        title = chosen.get("title") or "Anime random"
+        synopsis = self._truncate(chosen.get("synopsis") or "Chưa có synopsis.", 900)
+        embed = discord.Embed(title=title, url=chosen.get("url"), description=synopsis, color=_IROHA_COLOR)
+        embed.add_field(name="Điểm", value=str(chosen.get("score") or "N/A"), inline=True)
+        embed.add_field(name="Tập", value=str(chosen.get("episodes") or "?"), inline=True)
+        embed.add_field(name="Trạng thái", value=chosen.get("status") or "N/A", inline=True)
+
+        genres = chosen.get("genres") or []
+        if genres:
+            links = []
+            for row in genres[:6]:
+                mal_id = row.get("mal_id")
+                name = row.get("name") or "Unknown"
+                if mal_id:
+                    links.append(f"[{name}](https://myanimelist.net/anime/genre/{mal_id})")
+                else:
+                    links.append(name)
+            embed.add_field(name="Thể loại", value=", ".join(links), inline=False)
+
+        if the_loai:
+            embed.add_field(name="Filter thể loại", value=the_loai, inline=True)
+        if reference_anime is not None:
+            ref_title = reference_anime.get("title") or tham_chieu or "Reference"
+            ref_url = reference_anime.get("url")
+            ref_text = f"[{ref_title}]({ref_url})" if ref_url else ref_title
+            embed.add_field(name="Reference", value=ref_text, inline=True)
+
+        image_url = ((chosen.get("images") or {}).get("jpg") or {}).get("large_image_url")
+        if image_url:
+            embed.set_thumbnail(url=image_url)
+        embed.set_footer(text="Jikan Random / Filtered")
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="anime", description="Xem thông tin anime từ Jikan")
     async def anime(self, interaction: discord.Interaction, ten: app_commands.Range[str, 2, 100]):
